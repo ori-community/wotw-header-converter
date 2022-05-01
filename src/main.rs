@@ -19,20 +19,21 @@ fn main() {
 fn convert_file(path: impl AsRef<Path>) {
     let content = fs::read_to_string(path.as_ref()).expect("failed to read file");
     let out = convert(&content);
-    let out_name = format!("{}_converted.{}",
-        path.as_ref().file_stem().expect("invalid file name").to_str().expect("invalid file name"),
-        path.as_ref().extension().expect("invalid file extension").to_str().expect("invalid file extension")
-    );
-    let out_path = path.as_ref().with_file_name(out_name);
+
+    let file_name = path.as_ref().file_name().expect("invalid file name");
+    let mut out_path = path.as_ref().parent().expect("invalid file path").to_owned();
+    out_path.push("converted");
+    if fs::metadata(&out_path).is_err() {
+        fs::create_dir(&out_path).expect("failed to create output directory");
+    }
+    out_path.push(file_name);
     fs::write(out_path, out).expect("failed to write file");
 }
 
 fn convert_all_files(own_path: impl AsRef<Path>) {
     let directory = own_path.as_ref().parent().expect("failed to read directory");
     for header in headers_in_directory(directory) {
-        if header.file_stem().map_or(true, |stem| stem.to_str().map_or(true, |stem| !stem.ends_with("_converted"))) {
-            convert_file(header);
-        }
+        convert_file(header);
     }
 }
 
