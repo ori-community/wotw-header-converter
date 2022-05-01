@@ -28,10 +28,11 @@ fn convert_file(path: impl AsRef<Path>) {
 }
 
 fn convert_all_files(own_path: impl AsRef<Path>) {
-    eprintln!("{}", own_path.as_ref().display());
     let directory = own_path.as_ref().parent().expect("failed to read directory");
     for header in headers_in_directory(directory) {
-        convert_file(header);
+        if header.file_stem().map_or(true, |stem| stem.to_str().map_or(true, |stem| !stem.ends_with("_converted"))) {
+            convert_file(header);
+        }
     }
 }
 
