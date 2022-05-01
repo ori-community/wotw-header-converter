@@ -8,6 +8,7 @@ pub fn convert(string: &str) -> String {
         convert_flags(&mut line);
         convert_messages(&mut line);
         convert_icons(&mut line);
+        convert_shop_and_wheel_texts(&mut line);
         line
     }).collect::<Vec<_>>().join("\n");
     out.extend(iter::repeat('\n').take(trailing_newlines));
@@ -21,6 +22,19 @@ fn stringify_range(string: &mut String, range: Range<usize>) {
 fn find_line_end(string: &str) -> usize {
     let line_break_or_comment = string.find("//").unwrap_or_else(|| string.find('\n').unwrap_or_else(|| string.len()));
     string[..line_break_or_comment].rfind(|c: char| !c.is_whitespace()).map_or(0, |index| index + 1)
+}
+
+fn skip_parts(string: &str, mut amount: usize) -> Option<usize> {
+    let mut after_parts = 0;
+    for (index, char) in string.char_indices() {
+        if amount == 0 {
+            after_parts = index;
+            break
+        }
+        if char == '|' { amount -= 1; }
+    }
+    if after_parts == 0 && amount > 0 { None }
+    else { Some(after_parts) }
 }
 
 enum State {
@@ -141,18 +155,7 @@ fn convert_icons(string: &mut String) {
             Some(start + WHEEL_ICON.len())
         } else { None }
         .and_then(|start| {
-            let mut icon_start = 0;
-            let mut skip = 2;
-            for (index, char) in string[start..].char_indices() {
-                if char == '|' { skip -= 1; }
-                if skip == 0 {
-                    icon_start = index + 1;
-                    break
-                }
-            }
-
-            if icon_start == 0 { None }
-            else { Some(start + icon_start) }
+            skip_parts(&string[start..], 2).map(|index| start + index)
         })
     };
     if let Some(mut start) = start {
@@ -161,5 +164,42 @@ fn convert_icons(string: &mut String) {
             let end = find_line_end(string);
             stringify_range(string, start..end);
         }
+    }
+}
+
+const NAME_COMMAND: &str = "!!name ";
+const DISPLAY_COMMAND: &str = "!!display ";
+const DESCRIPTION_COMMAND: &str = "!!description ";
+const WHEEL_NAME: &str = "16|0|";
+const WHEEL_DESCRIPTION: &str = "16|1|";
+const SHOP_TITLE: &str = "17|1|";
+const SHOP_DESCRIPTION: &str = "17|2|";
+fn convert_shop_and_wheel_texts(string: &mut String) {
+    let string_start = if string.starts_with(NAME_COMMAND) {
+        Some(NAME_COMMAND.len())
+    } else if string.starts_with(DISPLAY_COMMAND) {
+        Some(DISPLAY_COMMAND.len())
+    } else if string.starts_with(DESCRIPTION_COMMAND) {
+        Some(DESCRIPTION_COMMAND.len())
+    } else { None }
+    .map_or_else(
+        || {
+            let mut start = find_last_item(string);
+            if string[start..].starts_with(WHEEL_NAME)
+            || string[start..].starts_with(WHEEL_DESCRIPTION)
+            || string[start..].starts_with(SHOP_TITLE)
+            || string[start..].starts_with(SHOP_DESCRIPTION) {
+                debug_assert_eq!(WHEEL_NAME.len(), WHEEL_DESCRIPTION.len());
+                debug_assert_eq!(SHOP_TITLE.len(), SHOP_DESCRIPTION.len());
+                debug_assert_eq!(WHEEL_NAME.len(), SHOP_TITLE.len());
+                start += WHEEL_NAME.len();
+                skip_parts(&string[start..], 2).map(|index| start + index)
+            } else { None }
+        },
+        |start| string[start..].find(" ").map(|index| start + index + 1)
+    );
+    if let Some(start) = string_start {
+        let end = find_line_end(string);
+        stringify_range(string, start..end);
     }
 }
