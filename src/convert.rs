@@ -7,6 +7,7 @@ pub fn convert(string: &str) -> String {
         let mut line = line.to_owned();
         convert_flags(&mut line);
         convert_messages(&mut line);
+        convert_icons(&mut line);
         line
     }).collect::<Vec<_>>().join("\n");
     out.extend(iter::repeat('\n').take(trailing_newlines));
@@ -121,5 +122,44 @@ fn convert_messages(string: &mut String) {
             message = format!("{message}|{flags}");
         }
         string.replace_range(start..end, &message);
+    }
+}
+
+const ICON_COMMAND: &str = "!!icon ";
+const SHOP_ICON: &str = "17|0|";
+const WHEEL_ICON: &str = "16|2|";
+const FILE: &str = "file:";
+fn convert_icons(string: &mut String) {
+    let start = if string.starts_with(ICON_COMMAND) {
+        let start = ICON_COMMAND.len();
+        string[start..].find(" ").map(|index| start + index + 1)
+    } else {
+        let start = find_last_item(string);
+        if string[start..].starts_with(SHOP_ICON) {
+            Some(start + SHOP_ICON.len())
+        } else if string[start..].starts_with(WHEEL_ICON) {
+            Some(start + WHEEL_ICON.len())
+        } else { None }
+        .and_then(|start| {
+            let mut icon_start = 0;
+            let mut skip = 2;
+            for (index, char) in string[start..].char_indices() {
+                if char == '|' { skip -= 1; }
+                if skip == 0 {
+                    icon_start = index + 1;
+                    break
+                }
+            }
+
+            if icon_start == 0 { None }
+            else { Some(start + icon_start) }
+        })
+    };
+    if let Some(mut start) = start {
+        if string[start..].starts_with(FILE) {
+            start += FILE.len();
+            let end = find_line_end(string);
+            stringify_range(string, start..end);
+        }
     }
 }
