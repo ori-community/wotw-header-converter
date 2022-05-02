@@ -9,6 +9,7 @@ pub fn convert(string: &str) -> String {
         convert_messages(&mut line);
         convert_icons(&mut line);
         convert_shop_and_wheel_texts(&mut line);
+        convert_skip(&mut line);
         line
     }).collect::<Vec<_>>().join("\n");
     out.extend(iter::repeat('\n').take(trailing_newlines));
@@ -104,7 +105,7 @@ fn convert_flags(string: &mut String) {
         let mut start = FLAGS.len();
         loop {
             start += string[start..].find(|c: char| !c.is_whitespace()).unwrap_or(0);
-            let (end, stop) = match string[start..].find(&[',', '\n']) {
+            let (end, stop) = match string[start..].find(&[',', '\n', '/']) {
                 Some(index) => (start + index, !string[start + index..].starts_with(',')),
                 None => (string.len(), true),
             };
@@ -144,6 +145,7 @@ const SHOP_ICON: &str = "17|0|";
 const WHEEL_ICON: &str = "16|2|";
 const FILE: &str = "file:";
 fn convert_icons(string: &mut String) {
+    let end = find_line_end(string);
     let start = if string.starts_with(ICON_COMMAND) {
         let start = ICON_COMMAND.len();
         string[start..].find(" ").map(|index| start + index + 1)
@@ -155,13 +157,12 @@ fn convert_icons(string: &mut String) {
             Some(start + WHEEL_ICON.len())
         } else { None }
         .and_then(|start| {
-            skip_parts(&string[start..], 2).map(|index| start + index)
+            skip_parts(&string[start..end], 2).map(|index| start + index)
         })
     };
     if let Some(mut start) = start {
         if string[start..].starts_with(FILE) {
             start += FILE.len();
-            let end = find_line_end(string);
             stringify_range(string, start..end);
         }
     }
@@ -175,6 +176,7 @@ const WHEEL_DESCRIPTION: &str = "16|1|";
 const SHOP_TITLE: &str = "17|1|";
 const SHOP_DESCRIPTION: &str = "17|2|";
 fn convert_shop_and_wheel_texts(string: &mut String) {
+    let end = find_line_end(string);
     let string_start = if string.starts_with(NAME_COMMAND) {
         Some(NAME_COMMAND.len())
     } else if string.starts_with(DISPLAY_COMMAND) {
@@ -193,13 +195,40 @@ fn convert_shop_and_wheel_texts(string: &mut String) {
                 debug_assert_eq!(SHOP_TITLE.len(), SHOP_DESCRIPTION.len());
                 debug_assert_eq!(WHEEL_NAME.len(), SHOP_TITLE.len());
                 start += WHEEL_NAME.len();
-                skip_parts(&string[start..], 2).map(|index| start + index)
+                skip_parts(&string[start..end], 2).map(|index| start + index)
             } else { None }
         },
         |start| string[start..].find(" ").map(|index| start + index + 1)
     );
     if let Some(start) = string_start {
-        let end = find_line_end(string);
         stringify_range(string, start..end);
+    }
+}
+
+const SET_UBERSTATE: &str = "8|";
+const SKIP: &str = "skip=";
+const POINTER: &str = "$(";
+fn convert_skip(string: &mut String) {
+    let mut start = find_last_item(string);
+    let end = find_line_end(string);
+    if string[start..].starts_with(SET_UBERSTATE) {
+        start += SET_UBERSTATE.len();
+        let pointer_amount = string[start..end].match_indices(POINTER).count();
+        if let Some(index) = skip_parts(&string[start..end], 4 + pointer_amount) {
+            start += index;
+            let amount_start = if string[start..].starts_with(char::is_numeric) {
+                start
+            } else if string[start..].starts_with(SKIP) {
+                start + SKIP.len()
+            } else { return };
+            let end = string[amount_start..].find(|c: char| !c.is_numeric()).map_or_else(|| string.len(), |index| amount_start + index);
+            if let Ok(amount) = string[amount_start..end].parse::<u32>() {
+                if amount > 1 {
+                    eprintln!("WARN: Cannot convert skip={amount} syntax, support for skip amounts higher than one has been dropped (originated in {string})");
+                } else {
+                    string.replace_range(start..end, "skip");
+                }
+            }
+        }
     }
 }
